@@ -1,0 +1,11 @@
+[package]
+name = "svg_path_simplifier"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "svgps"
+path = "src/main.rs"
+
+[dependencies]
+usvg = "~0.28"
