@@ -1,6 +1,6 @@
 # SVG Path Simplifier
 
-This program converts SVG images into MoveTo/LineTo/CubixBezierTo commands.
+This program converts SVG images into MoveTo/LineTo/CubicBezierTo commands.
 
 It utilizes the [usvg](https://github.com/RazrFalcon/resvg/tree/master/usvg) crate for SVG parsing and simplification.
 
