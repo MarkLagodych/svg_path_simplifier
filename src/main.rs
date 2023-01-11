@@ -72,50 +72,51 @@ impl PathData {
 
 
 fn collect_path(svg_node: &usvg::Node, output: &mut PathData) {
-    match *svg_node.borrow() {
-        usvg::NodeKind::Path(ref path) => {
-            let mut coordinates = path.data.points().iter();
+    if let usvg::NodeKind::Path(ref path) = *svg_node.borrow() {
+        if path.visibility != usvg::Visibility::Visible {
+            return;
+        }
 
-            let mut initial_point = (0.0f64, 0.0f64);
+        let mut coordinates = path.data.points().iter();
 
-            for command in path.data.commands() {
-                match *command {
-                    usvg::PathCommand::MoveTo => {
-                        let x = *coordinates.next().unwrap();
-                        let y = *coordinates.next().unwrap();
-                        initial_point = (x, y);
-                        output.coordinates.push(x);
-                        output.coordinates.push(y);
-                        output.commands.push(PathCommand::Move);
-                    }
+        let mut initial_point = (0.0f64, 0.0f64);
 
-                    usvg::PathCommand::LineTo => {
-                        output.coordinates.push(*coordinates.next().unwrap());
-                        output.coordinates.push(*coordinates.next().unwrap());
-                        output.commands.push(PathCommand::Line);
-                    }
+        for command in path.data.commands() {
+            match *command {
+                usvg::PathCommand::MoveTo => {
+                    let x = *coordinates.next().unwrap();
+                    let y = *coordinates.next().unwrap();
+                    initial_point = (x, y);
+                    output.coordinates.push(x);
+                    output.coordinates.push(y);
+                    output.commands.push(PathCommand::Move);
+                }
 
-                    usvg::PathCommand::CurveTo => {
-                        output.coordinates.push(*coordinates.next().unwrap());
-                        output.coordinates.push(*coordinates.next().unwrap());
-                        output.coordinates.push(*coordinates.next().unwrap());
-                        output.coordinates.push(*coordinates.next().unwrap());
-                        output.coordinates.push(*coordinates.next().unwrap());
-                        output.coordinates.push(*coordinates.next().unwrap());
-                        output.commands.push(PathCommand::Move);
-                    }
+                usvg::PathCommand::LineTo => {
+                    output.coordinates.push(*coordinates.next().unwrap());
+                    output.coordinates.push(*coordinates.next().unwrap());
+                    output.commands.push(PathCommand::Line);
+                }
 
-                    usvg::PathCommand::ClosePath => {
-                        output.coordinates.push(initial_point.0);
-                        output.coordinates.push(initial_point.1);
-                        output.commands.push(PathCommand::Line);
-                    }
+                usvg::PathCommand::CurveTo => {
+                    output.coordinates.push(*coordinates.next().unwrap());
+                    output.coordinates.push(*coordinates.next().unwrap());
+                    output.coordinates.push(*coordinates.next().unwrap());
+                    output.coordinates.push(*coordinates.next().unwrap());
+                    output.coordinates.push(*coordinates.next().unwrap());
+                    output.coordinates.push(*coordinates.next().unwrap());
+                    output.commands.push(PathCommand::Curve);
+                }
+
+                usvg::PathCommand::ClosePath => {
+                    output.coordinates.push(initial_point.0);
+                    output.coordinates.push(initial_point.1);
+                    output.commands.push(PathCommand::Line);
                 }
             }
         }
-
-        _ => {}
     }
+
 }
 
 
@@ -137,6 +138,4 @@ fn write_path(data: &PathData, mut file: &mut File) {
         
         write!(file, "{}", cmd);
     }
-
-    write!(file, "\n");
 }
