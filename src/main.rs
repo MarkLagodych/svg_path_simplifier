@@ -133,9 +133,7 @@ fn write_path(data: &PathData, mut file: &mut File) {
 
     write!(file, "\n");
 
-    for (i, cmd) in data.commands.iter().enumerate() {
-        if i != 0 { write!(file, " "); }
-        
+    for cmd in data.commands.iter() {
         write!(file, "{}", cmd);
     }
 }
