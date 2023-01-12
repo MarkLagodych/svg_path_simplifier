@@ -21,20 +21,49 @@ struct PathData {
 }
 
 
+const TEXT_USAGE: &'static str =
+r#"Usage:
+    svgps help
+    svgps generate INPUT.svg OUTPUT.svgpath
+    svgps render INPUT.svgpath OUTPUT.svg
+"#;
+
+const TEXT_HELP: &'static str = 
+r#"SVG Path Simplifier
+by Mark Lagodych <https://github.com/MarkLagodych/svg_path_simplifier>
+
+This program converts SVG art into MoveTo/LineTo/CubicBezierCurveTo commands.
+The goal is to make SVG easier to understand for plotters."#;
+
+
 fn main() {
     let args = std::env::args().collect::<Vec<String>>();
 
-    if args.len() != 3 {
-        println!("Usage: svgps INPUT.svg OUTPUT.txt");
+    if args.len() != 4 {
+        println!("{}", TEXT_USAGE);
         return;
     }
 
-    let input_path = &args[1];
-    let output_path = &args[2];
+    let action = &args[1];
+    let input_path = &args[2];
+    let output_path = &args[3];
 
     let input = std::fs::read_to_string(input_path).expect("Cannot read input file");
     let mut output = File::create(output_path).expect("Cannot open output file");
 
+    match action.as_str() {
+        "generate" => generate(&input, &mut output),
+
+        "render" => render(&input, &mut output),
+
+        _ => {
+            println!()
+        }
+    }
+}
+
+
+fn generate(input: &str, mut output: &mut File) {
     let svg = usvg::Tree::from_str(&input, &usvg::Options::default()).unwrap();
 
     let mut path_data = PathData::new();
@@ -46,6 +75,66 @@ fn main() {
     }
 
     write_path(&path_data, &mut output);
+}
+
+
+fn render(input: &str, mut output: &mut File) {
+    let mut lines = input.lines();
+
+    let metrics = lines.next().unwrap()
+        .split_whitespace()
+        .map(|x| x.parse::<u32>().unwrap())
+        .collect::<Vec<u32>>();
+
+    let mut coords = lines.next().unwrap()
+        .split_whitespace()
+        .map(|x| x.parse::<f64>().unwrap());
+
+    let mut commands = lines.next().unwrap()
+        .chars();
+
+    writeln!(output, r#"<?xml version="1.0" standalone="no"?>"#);
+
+    writeln!(
+        output,
+        r#"<svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {} {}">"#,
+        metrics[0], metrics[1]
+    );
+
+    output.write(br##"<path stroke="#000000" fill="none" d=""##);
+
+    for cmd in commands {
+        match cmd {
+            'M' => {
+                let x = coords.next().unwrap();
+                let y = coords.next().unwrap();
+                write!(output, "M {x} {y} ");
+            }
+
+            'L' => {
+                let x = coords.next().unwrap();
+                let y = coords.next().unwrap();
+                write!(output, "L {x} {y} ");
+            }
+
+            'C' => {
+                let x0 = coords.next().unwrap();
+                let y0 = coords.next().unwrap();
+                let x1 = coords.next().unwrap();
+                let y1 = coords.next().unwrap();
+                let x2 = coords.next().unwrap();
+                let y2 = coords.next().unwrap();
+                write!(output, "C {x0} {y0}, {x1} {y1}, {x2} {y2} ");
+            }
+
+            _ => {}
+        }
+    }
+
+    output.write(b"\"/>\n");
+
+    output.write(b"</svg>");
+
 }
 
 
@@ -121,7 +210,7 @@ fn collect_path(svg_node: &usvg::Node, output: &mut PathData) {
 
 
 fn write_path(data: &PathData, mut file: &mut File) {
-    write!(file, "{} {}\n", data.view_size.0, data.view_size.1);
+    write!(file, "{} {} ", data.view_size.0, data.view_size.1);
 
     write!(file, "{} {}\n", data.coordinates.len(), data.commands.len());
 

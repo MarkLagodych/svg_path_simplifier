@@ -7,17 +7,40 @@ It utilizes the [usvg](https://github.com/RazrFalcon/resvg/tree/master/usvg) cra
 ### Usage
 
 ```sh
-svgps INPUT.svg OUTPUT.svgpath
+svgps generate INPUT.svg OUTPUT.svgpath
+svgps render INPUT.svgpath OUTPUT.svg
 ```
 
-### Output format
+### SvgPath format
 
 ```
-VIEWBOX_WIDTH VIEWBOX_HEIGHT
-NUMBER_OF_COORDINATES NUMBER_OF_COMMANDS
-<float64>...
-<"M" | "L" | "C">...
+<viewbox_width: uint32>
+<SPACE>
+<viewbox_height: uint32>
+<SPACE>
+<number_of_coordinates: uint32>
+<SPACE>
+<number_of_commands: uint32>
+<EOL>
+
+<coordinate: float64>... (delimited by <SPACE>)
+<EOL>
+
+<command: "M" | "L" | "C">...
 ```
+
+### Example 0
+
+`example.svgpath`
+```
+720 480 4 2
+0 0 100 100
+ML
+```
+
+This file defines an image of size `720`x`480`
+with `4` coordinates (`0.0`, `0.0`, `100.0` and `100.0`), which form two points,
+and `2` commands: `M`ove and `L`ine.
 
 ### Example 1
 
@@ -30,8 +53,7 @@ NUMBER_OF_COORDINATES NUMBER_OF_COMMANDS
 ```
 `output.svgpath`
 ```
-800 600
-10 5
+800 600 10 5
 0 0 100 0 100 70 0 70 0 0
 MLLLL
 ```
@@ -57,8 +79,7 @@ MLLLL
 
 `output.svgpath`
 ```
-800 600
-28 6
+800 600 28 6
 150 100 150 133.1370849898476 127.61423749153967 160 100 160 72.38576250846033 160 50.00000000000001 133.1370849898476 50 100.00000000000001 49.99999999999999 66.86291501015242 72.38576250846032 39.99999999999999 99.99999999999999 39.999999999999986 127.61423749153965 39.99999999999997 150 66.86291501015239 150 100 150 100
 MCCCCL
 ```
