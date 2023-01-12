@@ -1,9 +1,12 @@
-#![allow(unused)]
+#![allow(unused_must_use)]
 
 extern crate usvg;
 
-use std::fs::File;
-use std::io::prelude::*;
+use std::{
+    fs::File,
+    io::prelude::*
+};
+
 
 #[derive(Debug)]
 enum PathCommand {
@@ -33,11 +36,19 @@ r#"SVG Path Simplifier
 by Mark Lagodych <https://github.com/MarkLagodych/svg_path_simplifier>
 
 This program converts SVG art into MoveTo/LineTo/CubicBezierCurveTo commands.
-The goal is to make SVG easier to understand for plotters."#;
+The goal is to make SVG easier to understand for plotters.
+
+"#;
+
 
 
 fn main() {
     let args = std::env::args().collect::<Vec<String>>();
+
+    if args.len() == 2 && args[1] == "help" {
+        println!("{}{}", TEXT_HELP, TEXT_USAGE);
+        return;
+    }
 
     if args.len() != 4 {
         println!("{}", TEXT_USAGE);
@@ -56,9 +67,7 @@ fn main() {
 
         "render" => render(&input, &mut output),
 
-        _ => {
-            println!()
-        }
+        _ => println!("{}", TEXT_USAGE)
     }
 }
 
@@ -78,7 +87,7 @@ fn generate(input: &str, mut output: &mut File) {
 }
 
 
-fn render(input: &str, mut output: &mut File) {
+fn render(input: &str, output: &mut File) {
     let mut lines = input.lines();
 
     let metrics = lines.next().unwrap()
@@ -90,7 +99,7 @@ fn render(input: &str, mut output: &mut File) {
         .split_whitespace()
         .map(|x| x.parse::<f64>().unwrap());
 
-    let mut commands = lines.next().unwrap()
+    let commands = lines.next().unwrap()
         .chars();
 
     writeln!(output, r#"<?xml version="1.0" standalone="no"?>"#);
@@ -101,7 +110,7 @@ fn render(input: &str, mut output: &mut File) {
         metrics[0], metrics[1]
     );
 
-    output.write(br##"<path stroke="#000000" fill="none" d=""##);
+    write!(output, r##"<path stroke="#000000" fill="none" d=""##);
 
     for cmd in commands {
         match cmd {
@@ -131,9 +140,9 @@ fn render(input: &str, mut output: &mut File) {
         }
     }
 
-    output.write(b"\"/>\n");
+    writeln!(output, r#""/>"#);
 
-    output.write(b"</svg>");
+    write!(output, "</svg>");
 
 }
 
@@ -169,37 +178,56 @@ fn collect_path(svg_node: &usvg::Node, output: &mut PathData) {
         let mut coordinates = path.data.points().iter();
 
         let mut initial_point = (0.0f64, 0.0f64);
+        let mut last_point = (0.0f64, 0.0f64);
+
+        let mut get_point = || -> (f64, f64) {
+            let x = *coordinates.next().unwrap();
+            let y = *coordinates.next().unwrap();
+            return path.transform.apply(x, y)
+        };
+
+        let mut push_point = |p: (f64, f64)| {
+            output.coordinates.push(p.0);
+            output.coordinates.push(p.1);
+        };
 
         for command in path.data.commands() {
             match *command {
                 usvg::PathCommand::MoveTo => {
-                    let x = *coordinates.next().unwrap();
-                    let y = *coordinates.next().unwrap();
-                    initial_point = (x, y);
-                    output.coordinates.push(x);
-                    output.coordinates.push(y);
+                    let p = get_point();
+                    initial_point = p.clone();
+                    last_point = p.clone();
+                    push_point(p);
+
                     output.commands.push(PathCommand::Move);
                 }
 
                 usvg::PathCommand::LineTo => {
-                    output.coordinates.push(*coordinates.next().unwrap());
-                    output.coordinates.push(*coordinates.next().unwrap());
+                    let p = get_point();
+                    last_point = p.clone();
+                    push_point(p);
+
                     output.commands.push(PathCommand::Line);
                 }
 
                 usvg::PathCommand::CurveTo => {
-                    output.coordinates.push(*coordinates.next().unwrap());
-                    output.coordinates.push(*coordinates.next().unwrap());
-                    output.coordinates.push(*coordinates.next().unwrap());
-                    output.coordinates.push(*coordinates.next().unwrap());
-                    output.coordinates.push(*coordinates.next().unwrap());
-                    output.coordinates.push(*coordinates.next().unwrap());
+                    push_point(get_point());
+                    push_point(get_point());
+
+                    let p = get_point();
+                    last_point = p.clone();
+                    push_point(p);
+
                     output.commands.push(PathCommand::Curve);
                 }
 
                 usvg::PathCommand::ClosePath => {
-                    output.coordinates.push(initial_point.0);
-                    output.coordinates.push(initial_point.1);
+                    // If there is nothing to draw, skip the command
+                    if last_point == initial_point {
+                        continue;
+                    }
+
+                    push_point(initial_point.clone());
                     output.commands.push(PathCommand::Line);
                 }
             }
@@ -209,7 +237,7 @@ fn collect_path(svg_node: &usvg::Node, output: &mut PathData) {
 }
 
 
-fn write_path(data: &PathData, mut file: &mut File) {
+fn write_path(data: &PathData, file: &mut File) {
     write!(file, "{} {} ", data.view_size.0, data.view_size.1);
 
     write!(file, "{} {}\n", data.coordinates.len(), data.commands.len());

@@ -1,6 +1,6 @@
 [package]
 name = "svg_path_simplifier"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 [[bin]]
