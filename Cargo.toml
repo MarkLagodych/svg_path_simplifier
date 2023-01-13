@@ -1,7 +1,10 @@
 [package]
 name = "svg_path_simplifier"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
+
+authors = ["Mark Lagodych <lgd.mrk@gmail.com>"]
+description = """Utility that helps plotters understand SVG in the same way that people do"""
 
 [[bin]]
 name = "svgps"
@@ -9,3 +12,5 @@ path = "src/main.rs"
 
 [dependencies]
 usvg = "~0.28"
+clap = { version = "~4.1", features = ["derive"] }
+kurbo = "~0.9"
