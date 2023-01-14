@@ -50,7 +50,7 @@ pub struct GenerateArgs {
     #[arg(short = 'c', long)]
     autocut: bool,
 
-    /// Remove the paths that are too short (whose length is less than PRECISION)
+    /// Remove the paths that are too short (shorter than PRECISION) after autocut
     #[arg(short = 'r', long)]
     polish: bool,
 
@@ -58,9 +58,9 @@ pub struct GenerateArgs {
     #[arg(short = 'p', long, default_value_t = 0.5)]
     precision: f64,
 
-    /// Do not convert ClosePath ("Z") commands into LineTo ("L")
-    #[arg(short = 'z', long)]
-    noclose: bool,
+    // /// Do not convert ClosePath ("Z") commands
+    // #[arg(short = 'z', long)]
+    // noclose: bool,
 
     /// Convert only stroked paths
     #[arg(short = 's', long)]

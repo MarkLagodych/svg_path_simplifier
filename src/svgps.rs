@@ -8,35 +8,42 @@ use std::{
     cell::Ref,
     fs::File,
     path::PathBuf,
+    collections::HashMap,
     io::prelude::*
 };
 
 
-#[derive(Debug)]
-enum PathCommand {
-    Move,
-    Line,
-    /// Cubic Bezier Path
-    Curve,
-}
-
-#[derive(Debug)]
-struct PathData {
-    pub view_size: (f64, f64),
-    pub coordinates: Vec<f64>,
-    pub commands: Vec<PathCommand>
-}
-
-
+/// .svg path representation
+///
 /// Reference-counted pointer
+#[derive(Clone)]
 struct SvgPath(usvg::Node);
 
 
-struct PathSegment {
+/// Intermediate path representation that is easier to process
+struct Path {
     pub source: SvgPath,
 
     /// Elemementary path segments: lines and Bezier curves
-    pub subsegments: kurbo::PathSeg,
+    pub segments: Vec<kurbo::PathSeg>,
+}
+
+
+struct PathIntersections {
+    /// Segment index -> its intersections with another path
+    pub info: HashMap<usize, Vec<kurbo::LineIntersection>>,
+}
+
+
+struct ImageSize {
+    width: u32,
+    height: u32,
+}
+
+/// Final .svgcom representation
+struct SvgCom {
+    pub view_size: ImageSize,
+    pub commands: kurbo::BezPath,
 }
 
 
@@ -62,16 +69,21 @@ pub fn generate_from_svg(args: GenerateArgs) -> Result<(), Error> {
     let mut output = open_writable_file(&args.output)?;
 
     let svg = parse_svg(&input)?;
+    let svg_paths = get_svg_paths(&svg);
 
-    let mut path_data = PathData::new();
+    let mut svgcom = SvgCom::new(svg.size.width(), svg.size.height());
 
-    path_data.view_size = (svg.view_box.rect.width(), svg.view_box.rect.height());
+    if !args.autocut {
 
-    for node in svg.root.descendants() {
-        collect_path(&node, &mut path_data);
+        svgcom.read_from_svg_paths(&svg_paths);
+        
+    } else {
+
+        todo!("Autocut not implemented")
+
     }
 
-    write_path(&path_data, &mut output);
+    write!(output, "{}", svgcom.to_svgcom());
 
     Ok(())
 }
@@ -81,61 +93,13 @@ pub fn render_to_svg(args: RenderArgs) -> Result<(), Error> {
     let input = read_file(&args.input)?;
     let mut output = open_writable_file(&args.output)?;
 
-    let mut lines = input.lines();
+    let svgcom = SvgCom::from_svgcom_str(&input)?;
 
-    let metrics = lines.next().unwrap()
-        .split_whitespace()
-        .map(|x| x.parse::<u32>().unwrap())
-        .collect::<Vec<u32>>();
+    write_svg_start(&mut output, &args, &svgcom.view_size);
 
-    let mut coords = lines.next().unwrap()
-        .split_whitespace()
-        .map(|x| x.parse::<f64>().unwrap());
+    write!(output, "{}", svgcom.to_svg_path_data());
 
-    let commands = lines.next().unwrap()
-        .chars();
-
-    writeln!(output, r#"<?xml version="1.0" standalone="no"?>"#);
-
-    writeln!(
-        output,
-        r#"<svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {} {}">"#,
-        metrics[0], metrics[1]
-    );
-
-    write!(output, r##"<path stroke="#000000" fill="none" d=""##);
-
-    for cmd in commands {
-        match cmd {
-            'M' => {
-                let x = coords.next().unwrap();
-                let y = coords.next().unwrap();
-                write!(output, "M {x} {y} ");
-            }
-
-            'L' => {
-                let x = coords.next().unwrap();
-                let y = coords.next().unwrap();
-                write!(output, "L {x} {y} ");
-            }
-
-            'C' => {
-                let x0 = coords.next().unwrap();
-                let y0 = coords.next().unwrap();
-                let x1 = coords.next().unwrap();
-                let y1 = coords.next().unwrap();
-                let x2 = coords.next().unwrap();
-                let y2 = coords.next().unwrap();
-                write!(output, "C {x0} {y0}, {x1} {y1}, {x2} {y2} ");
-            }
-
-            _ => {}
-        }
-    }
-
-    writeln!(output, r#""/>"#);
-
-    write!(output, "</svg>");
+    write_svg_end(&mut output);
 
     Ok(())
 }
@@ -144,6 +108,45 @@ pub fn render_to_svg(args: RenderArgs) -> Result<(), Error> {
 fn parse_svg(input: &str) -> Result<usvg::Tree, Error> {
     usvg::Tree::from_str(&input, &usvg::Options::default())
         .or_else(|err| Err(format!("Cannot parse SVG: {}", err.to_string())))
+}
+
+
+fn get_svg_paths(svg: &usvg::Tree) -> Vec<SvgPath> {
+    svg.root.descendants()
+        .filter(|node| 
+            match *node.borrow() {
+                usvg::NodeKind::Path(_) => true,
+                _ => false
+            })
+        .map(|node| SvgPath::new(&node))
+        .filter(|path_result| path_result.is_some())
+        .map(|result| result.unwrap())
+        .collect::<Vec<SvgPath>>()
+}
+
+
+fn write_svg_start(output: &mut File, args: &RenderArgs, size: &ImageSize) {
+    writeln!(output, r#"<?xml version="1.0" standalone="no"?>"#);
+
+    writeln!(
+        output,
+        r#"<svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {} {}">"#,
+        size.width, size.height
+    );
+
+    write!(
+        output,
+        r##"<path stroke="{}" stroke-width="{}" fill="none" d=""##,
+        args.stroke,
+        args.stroke_width
+    );
+}
+
+
+fn write_svg_end(output: &mut File) {
+    writeln!(output, r#""/>"#);
+
+    write!(output, "</svg>");
 }
 
 
@@ -158,7 +161,7 @@ impl SvgPath {
     }
 
 
-    pub fn get_svg_path(&self) -> Ref<'_, usvg::Path> {
+    pub fn borrow(&self) -> Ref<'_, usvg::Path> {
         let node_ref = self.0.borrow();
         return Ref::map(node_ref, |node_ref| {
             if let usvg::NodeKind::Path(ref path) = node_ref {
@@ -173,16 +176,16 @@ impl SvgPath {
 
 
     pub fn is_closed(&self) -> bool {
-        let path = self.get_svg_path();
+        let path = self.borrow();
 
         return path.data.commands().len() > 0
             && *path.data.commands().last().unwrap() == usvg::PathCommand::ClosePath
     }
 
 
-    /// Returns true if the winding test passes
+    /// Additional test for checking whether a given point lies inside a shape
     pub fn test_winding(&self, winding: i32) -> bool {
-        let path = self.get_svg_path();
+        let path = self.borrow();
 
         if let Some(fill) = &path.fill {
             match fill.rule {
@@ -198,110 +201,254 @@ impl SvgPath {
 }
 
 
-impl std::fmt::Display for PathCommand {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            PathCommand::Move => "M",
-            PathCommand::Line => "L",
-            PathCommand::Curve => "C"
-        })
+impl ImageSize {
+    pub fn new(width: u32, height: u32) -> Self {
+        Self { width, height }
     }
 }
 
 
-impl PathData {
-    pub fn new() -> Self {
+impl SvgCom {
+    pub fn new(width: f64, height: f64) -> Self {
         Self {
-            view_size: (0., 0.),
-            coordinates: vec![],
-            commands: vec![]
+            view_size: ImageSize::new(width.ceil() as u32, height.ceil() as u32),
+            commands: kurbo::BezPath::new()
         }
     }
-}
 
 
-fn collect_path(svg_node: &usvg::Node, output: &mut PathData) {
-    if let usvg::NodeKind::Path(ref path) = *svg_node.borrow() {
-        if path.visibility != usvg::Visibility::Visible {
-            return;
+    pub fn read_from_svg_paths(&mut self, svg_paths: &Vec<SvgPath>) {
+        for path in svg_paths {
+            self.read_from_svg_path(path);
+        }
+    }
+
+
+    pub fn from_svgcom_str(source: &str) -> Result<Self, Error> {
+        let lines = source.lines()
+            .collect::<Vec<&str>>();
+
+        if lines.len() < 3 {
+            return Err("Expected at least 3 lines".to_string());
         }
 
-        let mut coordinates = path.data.points().iter();
+        let mut lines = lines.iter();
 
-        let mut initial_point = (0.0f64, 0.0f64);
-        let mut last_point = (0.0f64, 0.0f64);
+        let metrics = Self::parse_svgcom_metrics(lines.next().unwrap())?;
+        let commands = Self::parse_svgcom_commands(lines.next().unwrap());
+        let coords = Self::parse_svgcom_coords(lines.next().unwrap())?;
 
-        let mut get_point = || -> (f64, f64) {
-            let x = *coordinates.next().unwrap();
-            let y = *coordinates.next().unwrap();
-            return path.transform.apply(x, y)
+        if commands.len() != metrics[2] as usize || coords.len() != metrics[3] as usize {
+            return Err("Data length does not match the header information".to_string());
+        }
+
+        let mut me = Self::new(metrics[0] as f64, metrics[1] as f64);
+
+        me.read_svgcom_data(commands, coords)?;
+
+        Ok(me)
+    }
+
+
+    fn parse_svgcom_metrics(line: &str) -> Result<Vec<u32>, Error> {
+        let metrics = line
+            .split_whitespace()
+            .map(|x| x.parse::<u32>()
+                .map_err(|err| format!("Uint32 parsing error: {}", err)))
+            .collect::<Result<Vec<u32>, Error>>()?;
+
+        if metrics.len() != 4 {
+            return Err("Expected 4 metrics components: WIDTH, HEIGHT, N_CMD, N_COORD".to_string());
+        }
+
+        Ok(metrics)
+    }
+
+    fn parse_svgcom_commands(line: &str) -> Vec<char> {
+        line
+            .chars()
+            .collect::<Vec<char>>()
+    }
+
+    fn parse_svgcom_coords(line: &str) -> Result<Vec<f64>, Error> {
+        line
+            .split_whitespace()
+            .map(|x| x.parse::<f64>()
+                .map_err(|err| format!("Float64 parsing error: {}", err)))
+            .collect::<Result<Vec<f64>, Error>>()
+    }
+
+
+    fn read_svgcom_data(&mut self, commands: Vec<char>, coords: Vec<f64>) -> Result<(), Error> {
+        let mut coords_iter = coords.iter();
+        let mut get_point = || {
+            kurbo::Point::new(*coords_iter.next().unwrap(), *coords_iter.next().unwrap())
         };
 
-        let mut push_point = |p: (f64, f64)| {
-            output.coordinates.push(p.0);
-            output.coordinates.push(p.1);
+        for cmd in commands {
+            match cmd {
+                'M' => self.commands.move_to(get_point()),
+                'L' => self.commands.line_to(get_point()),
+                'C' => self.commands.curve_to(get_point(), get_point(), get_point()),
+                'Z' => self.commands.close_path(),
+                c => return Err(format!("Invalid command: {}", c)),
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn points_count(&self) -> usize {
+        let mut npoints = 0;
+
+        for cmd in self.commands.iter() {
+            npoints += match cmd {
+                kurbo::PathEl::MoveTo(_) => 1,
+                kurbo::PathEl::LineTo(_) => 1,
+                kurbo::PathEl::CurveTo(_, _, _) => 3,
+                kurbo::PathEl::ClosePath => 0,
+                kurbo::PathEl::QuadTo(_, _) => panic!("unexpected quadradic curve"),
+            };
+        }
+
+        npoints
+    }
+
+
+    pub fn coordinates_count(&self) -> usize {
+        self.points_count() * 2
+    }
+
+
+    pub fn to_svg_path_data(&self) -> String {
+        struct A<'a>(&'a SvgCom);
+
+        impl<'a> std::fmt::Display for A<'a> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                self.0.format_svg_path_data(f)
+            }
+        }
+
+        format!("{}", A(self))
+    }
+
+
+    pub fn to_svgcom(&self) -> String {
+        struct A<'a>(&'a SvgCom);
+
+        impl<'a> std::fmt::Display for A<'a> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                self.0.format_svgcom(f)
+            }
+        }
+
+        format!("{}", A(self))
+    }
+
+    pub(self) fn format_svg_path_data(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        for cmd in self.commands.iter() {
+            match cmd {
+                kurbo::PathEl::MoveTo(p) =>
+                    write!(f, "M{} {}", p.x, p.y)?,
+
+                kurbo::PathEl::LineTo(p) =>
+                    write!(f, "L{} {}", p.x, p.y)?,
+
+                kurbo::PathEl::CurveTo(p1, p2, p3) =>
+                    write!(f, "C{} {},{} {},{} {}", p1.x, p1.y, p2.x, p2.y, p3.x, p3.y)?,
+
+                kurbo::PathEl::ClosePath =>
+                    write!(f, "Z")?,
+
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+
+
+    fn read_from_svg_path(&mut self, svg_path: &SvgPath) {
+        let path = svg_path.borrow();
+        let path_data = &path.data;
+        let mut coords = path_data.points().iter();
+        let commands = path_data.commands().iter();
+
+        let mut get_point = || {
+            let mut x = *(coords.next().unwrap());
+            let mut y = *(coords.next().unwrap());
+            path.transform.apply_to(&mut x, &mut y);
+            kurbo::Point::new(x, y)
         };
 
-        for command in path.data.commands() {
+        for command in commands {
             match *command {
-                usvg::PathCommand::MoveTo => {
-                    let p = get_point();
-                    initial_point = p.clone();
-                    last_point = p.clone();
-                    push_point(p);
-
-                    output.commands.push(PathCommand::Move);
-                }
-
-                usvg::PathCommand::LineTo => {
-                    let p = get_point();
-                    last_point = p.clone();
-                    push_point(p);
-
-                    output.commands.push(PathCommand::Line);
-                }
-
-                usvg::PathCommand::CurveTo => {
-                    push_point(get_point());
-                    push_point(get_point());
-
-                    let p = get_point();
-                    last_point = p.clone();
-                    push_point(p);
-
-                    output.commands.push(PathCommand::Curve);
-                }
-
-                usvg::PathCommand::ClosePath => {
-                    // If there is nothing to draw, skip the command
-                    if last_point == initial_point {
-                        continue;
-                    }
-
-                    push_point(initial_point.clone());
-                    output.commands.push(PathCommand::Line);
-                }
+                usvg::PathCommand::MoveTo => self.commands.move_to(get_point()),
+                usvg::PathCommand::LineTo => self.commands.line_to(get_point()),
+                usvg::PathCommand::CurveTo => self.commands.curve_to(get_point(), get_point(), get_point()),
+                usvg::PathCommand::ClosePath => self.commands.close_path(),
             }
         }
     }
 
-}
+    
 
 
-fn write_path(data: &PathData, file: &mut File) {
-    write!(file, "{} {} ", data.view_size.0, data.view_size.1);
-
-    write!(file, "{} {}\n", data.coordinates.len(), data.commands.len());
-
-    for (i, coord) in data.coordinates.iter().enumerate() {
-        if i != 0 { write!(file, " "); }
-        
-        write!(file, "{}", coord);
+    pub(self) fn format_svgcom(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.format_svgcom_metrics(f)?;
+        self.format_svgcom_commands(f)?;
+        self.format_svgcom_points(f)?;
+        Ok(())
     }
 
-    write!(file, "\n");
 
-    for cmd in data.commands.iter() {
-        write!(file, "{}", cmd);
+    fn format_svgcom_metrics(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{} {} {} {}",
+            self.view_size.width,
+            self.view_size.height,
+            self.commands.elements().len(),
+            self.coordinates_count()
+        )
+    }
+
+
+    fn format_svgcom_commands(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for cmd in self.commands.iter() {
+            match cmd {
+                kurbo::PathEl::MoveTo(_) => write!(f, "M")?,
+                kurbo::PathEl::LineTo(_) => write!(f, "L")?,
+                kurbo::PathEl::CurveTo(_, _, _) => write!(f, "C")?,
+                kurbo::PathEl::ClosePath => write!(f, "Z")?,
+                _ => {}
+            }
+        }
+
+        writeln!(f, "")?;
+
+        Ok(())
+    }
+
+
+    fn format_svgcom_points(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, cmd) in self.commands.iter().enumerate() {
+            if i != 0 { write!(f, " ")?; }
+
+            match cmd {
+                kurbo::PathEl::MoveTo(p) =>
+                    write!(f, "{} {}", p.x, p.y)?,
+
+                kurbo::PathEl::LineTo(p) =>
+                    write!(f, "{} {}", p.x, p.y)?,
+
+                kurbo::PathEl::CurveTo(p1, p2, p3) =>
+                    write!(f, "{} {} {} {} {} {}", p1.x, p1.y, p2.x, p2.y, p3.x, p3.y)?,
+
+                _ => {}
+            }
+        }
+
+        writeln!(f, "")?;
+        
+        Ok(())
     }
 }

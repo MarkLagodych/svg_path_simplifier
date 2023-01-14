@@ -1,6 +1,6 @@
 [package]
 name = "svg_path_simplifier"
-version = "0.1.2"
+version = "0.2.0-alpha"
 edition = "2021"
 
 authors = ["Mark Lagodych <lgd.mrk@gmail.com>"]
