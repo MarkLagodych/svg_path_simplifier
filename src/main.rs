@@ -6,6 +6,8 @@ extern crate kurbo;
 
 
 mod svgps;
+mod svgcom;
+
 use svgps::{
     generate_from_svg, render_to_svg
 };
