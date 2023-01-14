@@ -59,7 +59,7 @@ pub fn generate_from_svg(args: GenerateArgs) -> Result<(), Error> {
     let mut output = open_writable_file(&args.output)?;
 
     let svg = parse_svg(&input)?;
-    let svg_paths = get_svg_paths(&svg);
+    let svg_paths = get_svg_paths(&svg, &args);
 
     let mut svgcom = SvgCom::new(svg.size.width(), svg.size.height());
 
@@ -101,7 +101,7 @@ fn parse_svg(input: &str) -> Result<usvg::Tree, Error> {
 }
 
 
-fn get_svg_paths(svg: &usvg::Tree) -> Vec<SvgPath> {
+fn get_svg_paths(svg: &usvg::Tree, args: &GenerateArgs) -> Vec<SvgPath> {
     svg.root.descendants()
         .filter(|node| 
             match *node.borrow() {
@@ -111,6 +111,7 @@ fn get_svg_paths(svg: &usvg::Tree) -> Vec<SvgPath> {
         .map(|node| SvgPath::new(&node))
         .filter(|path_result| path_result.is_some())
         .map(|result| result.unwrap())
+        .filter(|path| !args.onlystroked || path.borrow().stroke.is_some())
         .collect::<Vec<SvgPath>>()
 }
 
