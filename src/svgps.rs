@@ -7,11 +7,12 @@ use crate::{
 };
 
 use std::{
+    rc::Rc,
     cell::Ref,
     fs::File,
     path::PathBuf,
     collections::HashMap,
-    io::prelude::*
+    io::prelude::*, borrow::Borrow, 
 };
 
 
@@ -19,12 +20,25 @@ use std::{
 ///
 /// Reference-counted pointer
 #[derive(Clone)]
-pub struct SvgPath(usvg::Node);
+pub struct SvgPathNode(usvg::Node);
+
+
+pub struct SvgPathPoints {
+    path_data: Rc<usvg::PathData>,
+    transform: usvg::Transform,
+    coordinate_index: usize,
+}
+
+pub struct SvgPathCommands {
+    path_data: Rc<usvg::PathData>,
+    command_index: usize,
+}
+
 
 
 /// Intermediate path representation that is easier to process
-struct Path {
-    pub source: SvgPath,
+pub struct Path {
+    pub source: SvgPathNode,
 
     /// Elemementary path segments: lines and Bezier curves
     pub segments: Vec<kurbo::PathSeg>,
@@ -59,15 +73,19 @@ pub fn generate_from_svg(args: GenerateArgs) -> Result<(), Error> {
     let mut output = open_writable_file(&args.output)?;
 
     let svg = parse_svg(&input)?;
-    let svg_paths = get_svg_paths(&svg, &args);
+    let svg_path_nodes = get_svg_paths(&svg, &args);
 
     let mut svgcom = SvgCom::new(svg.size.width(), svg.size.height());
 
     if !args.autocut {
 
-        svgcom.read_from_svg_paths(&svg_paths);
+        svgcom.read_from_svg_paths(&svg_path_nodes);
         
     } else {
+
+        let paths = svg_path_nodes.iter()
+            .map(|node| Path::new(&node))
+            .collect::<Vec<Path>>();
 
         todo!("Autocut not implemented")
 
@@ -101,18 +119,18 @@ fn parse_svg(input: &str) -> Result<usvg::Tree, Error> {
 }
 
 
-fn get_svg_paths(svg: &usvg::Tree, args: &GenerateArgs) -> Vec<SvgPath> {
+fn get_svg_paths(svg: &usvg::Tree, args: &GenerateArgs) -> Vec<SvgPathNode> {
     svg.root.descendants()
         .filter(|node| 
             match *node.borrow() {
                 usvg::NodeKind::Path(_) => true,
                 _ => false
             })
-        .map(|node| SvgPath::new(&node))
+        .map(|node| SvgPathNode::new(&node))
         .filter(|path_result| path_result.is_some())
         .map(|result| result.unwrap())
-        .filter(|path| !args.onlystroked || path.borrow().stroke.is_some())
-        .collect::<Vec<SvgPath>>()
+        .filter(|path| !args.onlystroked || path.get_path().stroke.is_some())
+        .collect::<Vec<SvgPathNode>>()
 }
 
 
@@ -141,7 +159,7 @@ fn write_svg_end(output: &mut File) {
 }
 
 
-impl SvgPath {
+impl SvgPathNode {
     /// Returns [None] if the node is not a [usvg::Path]
     pub fn new(node: &usvg::Node) -> Option<Self> {
         if let usvg::NodeKind::Path(_) = *node.borrow() {
@@ -152,7 +170,7 @@ impl SvgPath {
     }
 
 
-    pub fn borrow(&self) -> Ref<'_, usvg::Path> {
+    pub fn get_path(&self) -> Ref<'_, usvg::Path> {
         let node_ref = self.0.borrow();
         return Ref::map(node_ref, |node_ref| {
             if let usvg::NodeKind::Path(ref path) = node_ref {
@@ -167,7 +185,7 @@ impl SvgPath {
 
 
     pub fn is_closed(&self) -> bool {
-        let path = self.borrow();
+        let path = self.get_path();
 
         return path.data.commands().len() > 0
             && *path.data.commands().last().unwrap() == usvg::PathCommand::ClosePath
@@ -176,7 +194,7 @@ impl SvgPath {
 
     /// Additional test for checking whether a given point lies inside a shape
     pub fn test_winding(&self, winding: i32) -> bool {
-        let path = self.borrow();
+        let path = self.get_path();
 
         if let Some(fill) = &path.fill {
             match fill.rule {
@@ -189,4 +207,101 @@ impl SvgPath {
     }
 
 
+    pub fn get_points_iter(&self) -> SvgPathPoints {
+        SvgPathPoints::from(self)
+    }
+
+    pub fn get_commands_iter(&self) -> SvgPathCommands {
+        SvgPathCommands::from(self)
+    }
+
+}
+
+
+impl Path {
+    pub fn new(svg_path: &SvgPathNode) -> Self {
+        Self {
+            source: svg_path.clone(),
+            segments: Self::get_path_segments(&svg_path)
+        }
+    }
+
+
+    fn get_path_segments(svg_node: &SvgPathNode) -> Vec<kurbo::PathSeg> {
+        let mut bezpath = kurbo::BezPath::new();
+
+        let mut commands = svg_node.get_commands_iter();
+        let mut points = svg_node.get_points_iter();
+        let mut p = || points.next().unwrap();
+        
+        for command in commands {
+            match command {
+                usvg::PathCommand::MoveTo => bezpath.move_to(p()),
+                usvg::PathCommand::LineTo => bezpath.line_to(p()),
+                usvg::PathCommand::CurveTo => bezpath.curve_to(p(), p(), p()),
+                usvg::PathCommand::ClosePath => bezpath.close_path(),
+            }
+        }
+
+        bezpath.segments()
+            .collect::<Vec<kurbo::PathSeg>>()
+    }
+}
+
+
+
+impl SvgPathPoints {
+    pub fn from(svg_node: &SvgPathNode) -> Self {
+        
+        let path = svg_node.get_path();
+        let path_data = Rc::clone(&path.data);
+        let transform = path.transform.clone();
+
+        Self {
+            path_data,
+            transform,
+            coordinate_index: 0,
+        }
+    }
+}
+
+
+impl SvgPathCommands {
+    pub fn from(svg_node: &SvgPathNode) -> Self {
+        
+        let path = svg_node.get_path();
+        let path_data = Rc::clone(&path.data);
+
+        Self {
+            path_data,
+            command_index: 0,
+        }
+    }
+}
+
+
+impl Iterator for SvgPathPoints {
+    type Item = kurbo::Point;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let coordinates = self.path_data.points();
+        let x = *coordinates.get(self.coordinate_index)?;
+        let y = *coordinates.get(self.coordinate_index + 1)?;
+        self.coordinate_index += 2;
+
+        let (x, y) = self.transform.apply(x, y);
+
+        Some(kurbo::Point::new(x, y))
+    }
+}
+
+
+impl Iterator for SvgPathCommands {
+    type Item = usvg::PathCommand;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let command = self.path_data.commands().get(self.command_index)?.clone();
+        self.command_index += 1;
+        Some(command)
+    }
 }

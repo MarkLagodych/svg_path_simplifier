@@ -1,6 +1,6 @@
 use crate::{
     Error,
-    svgps::SvgPath,
+    svgps::{SvgPathNode, SvgPathPoints},
 };
 
 
@@ -35,7 +35,7 @@ impl SvgCom {
     }
 
 
-    pub fn read_from_svg_paths(&mut self, svg_paths: &Vec<SvgPath>) {
+    pub fn read_from_svg_paths(&mut self, svg_paths: &Vec<SvgPathNode>) {
         for path in svg_paths {
             self.read_from_svg_path(path);
         }
@@ -191,24 +191,16 @@ impl SvgCom {
     }
 
 
-    fn read_from_svg_path(&mut self, svg_path: &SvgPath) {
-        let path = svg_path.borrow();
-        let path_data = &path.data;
-        let mut coords = path_data.points().iter();
-        let commands = path_data.commands().iter();
-
-        let mut get_point = || {
-            let mut x = *(coords.next().unwrap());
-            let mut y = *(coords.next().unwrap());
-            path.transform.apply_to(&mut x, &mut y);
-            kurbo::Point::new(x, y)
-        };
+    fn read_from_svg_path(&mut self, svg_node: &SvgPathNode) {
+        let mut commands = svg_node.get_commands_iter();
+        let mut points = svg_node.get_points_iter();
+        let mut p = || points.next().unwrap();
 
         for command in commands {
-            match *command {
-                usvg::PathCommand::MoveTo => self.commands.move_to(get_point()),
-                usvg::PathCommand::LineTo => self.commands.line_to(get_point()),
-                usvg::PathCommand::CurveTo => self.commands.curve_to(get_point(), get_point(), get_point()),
+            match command {
+                usvg::PathCommand::MoveTo => self.commands.move_to(p()),
+                usvg::PathCommand::LineTo => self.commands.line_to(p()),
+                usvg::PathCommand::CurveTo => self.commands.curve_to(p(), p(), p()),
                 usvg::PathCommand::ClosePath => self.commands.close_path(),
             }
         }
