@@ -11,6 +11,9 @@ name = "svgps"
 path = "src/main.rs"
 
 [dependencies]
+# SVG parsing
 usvg = "~0.28"
-clap = { version = "~4.1", features = ["derive"] }
+# Curve manipulation
 kurbo = "~0.9"
+# Command Line Argument Parsing
+clap = { version = "~4.1", features = ["derive"] }

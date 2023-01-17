@@ -1,6 +1,6 @@
 use crate::{
     Error,
-    svgps::{SvgPathNode, SvgPathPoints},
+    svgps::{SvgPathNode, SvgPathPoints, Path},
 };
 
 
@@ -39,6 +39,18 @@ impl SvgCom {
         for path in svg_paths {
             self.read_from_svg_path(path);
         }
+    }
+
+
+    pub fn read_from_paths(&mut self, paths: &Vec<Path>) {
+        for path in paths {
+            self.read_from_path(path);
+        }
+    }
+
+
+    fn read_from_path(&mut self, path: &Path) {
+        self.commands.extend(kurbo::BezPath::from_path_segments(path.segments.clone().into_iter()));
     }
 
 
@@ -143,20 +155,12 @@ impl SvgCom {
     }
 
 
-    pub fn to_svg_path_data(&self) -> String {
-        struct A<'a>(&'a SvgCom);
-
-        impl<'a> std::fmt::Display for A<'a> {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                self.0.format_svg_path_data(f)
-            }
-        }
-
-        format!("{}", A(self))
+    pub fn to_svg_path_data_str(&self) -> String {
+        self.commands.to_svg()
     }
 
 
-    pub fn to_svgcom(&self) -> String {
+    pub fn to_svgcom_str(&self) -> String {
         struct A<'a>(&'a SvgCom);
 
         impl<'a> std::fmt::Display for A<'a> {
@@ -166,28 +170,6 @@ impl SvgCom {
         }
 
         format!("{}", A(self))
-    }
-
-    pub(self) fn format_svg_path_data(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        for cmd in self.commands.iter() {
-            match cmd {
-                kurbo::PathEl::MoveTo(p) =>
-                    write!(f, "M{} {}", p.x, p.y)?,
-
-                kurbo::PathEl::LineTo(p) =>
-                    write!(f, "L{} {}", p.x, p.y)?,
-
-                kurbo::PathEl::CurveTo(p1, p2, p3) =>
-                    write!(f, "C{} {},{} {},{} {}", p1.x, p1.y, p2.x, p2.y, p3.x, p3.y)?,
-
-                kurbo::PathEl::ClosePath =>
-                    write!(f, "Z")?,
-
-                _ => {}
-            }
-        }
-
-        Ok(())
     }
 
 

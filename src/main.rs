@@ -49,15 +49,15 @@ pub struct GenerateArgs {
     output: PathBuf,
 
     /// Automatically cut the path segments that are covered and therefore invisible
-    #[arg(short = 'c', long)]
+    #[arg(short = 'a', long)]
     autocut: bool,
 
     /// Remove the paths that are too short (shorter than PRECISION) after autocut
-    #[arg(short = 'r', long)]
+    #[arg(short = 'p', long)]
     polish: bool,
 
     /// Precision of autocut/polish commands (in pixels)
-    #[arg(short = 'p', long, default_value_t = 0.5)]
+    #[arg(short = 'e', long, default_value_t = 0.25)]
     precision: f64,
 
     // /// Do not convert ClosePath ("Z") commands
@@ -81,6 +81,10 @@ pub struct RenderArgs {
     /// SVG stroke attribute for the generated path
     #[arg(short = 's', long, default_value = "#000000")]
     stroke: String,
+
+    /// SVG fill attribute for the generated path
+    #[arg(short = 'f', long, default_value = "none")]
+    fill: String,
 
     /// SVG stroke-width attribute for the generated path
     #[arg(id = "WIDTH", short = 'w', long = "stroke-width", default_value_t = 1.0)]
