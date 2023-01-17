@@ -57,7 +57,7 @@ pub struct GenerateArgs {
     polish: bool,
 
     /// Precision of autocut/polish commands (in pixels)
-    #[arg(short = 'e', long, default_value_t = 0.25)]
+    #[arg(short = 'e', long, default_value_t = 0.1)]
     precision: f64,
 
     // /// Do not convert ClosePath ("Z") commands
