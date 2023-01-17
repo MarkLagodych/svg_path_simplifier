@@ -14,7 +14,7 @@ use std::{
     fs::File,
     path::PathBuf,
     collections::HashMap,
-    io::prelude::*, borrow::Borrow, 
+    io::prelude::*, borrow::{Borrow, BorrowMut}, 
 };
 
 
@@ -450,7 +450,14 @@ fn get_path_intersections(
                 precision
             );
 
-            if !segment_intersections.is_empty() {
+            if segment_intersections.is_empty() {
+                continue;
+            }
+
+            if path_intersections.contains_key(&segment_index) {
+                path_intersections.get_mut(&segment_index).unwrap()
+                    .extend(segment_intersections);
+            } else {
                 path_intersections.insert(segment_index, segment_intersections);
             }
         }
@@ -472,14 +479,13 @@ fn cut_path(path: &Path, intersections: &PathIntersections) -> Vec<Path> {
         if !intersections.contains_key(&index) {
             subpaths.last_mut().unwrap().segments.push(segment.clone());
         } else {
-            let _subsegments = cut_segment(segment, &intersections[&index]);
-            let mut subsegments = _subsegments.iter();
+            let mut subsegments = cut_segment(segment, &intersections[&index]).into_iter();
 
-            if let Some(subsegment) = subsegments.next() {
+            if let Some(segment) = subsegments.next() {
                 subpaths.last_mut().unwrap().segments.push(segment.clone());
             }
 
-            while let Some(subsegment) = subsegments.next() {
+            for segment in subsegments {
                 subpaths.push(new_path());
                 subpaths.last_mut().unwrap().segments.push(segment.clone());
             }
@@ -516,13 +522,16 @@ fn is_point_covered(point: kurbo::Point, covering: &Path) -> bool {
 
 
 // TODO replace naive implementation with a real one
+// TODO first intersect all paths, then cut
+// TODO calculate bezpaths once
+// FIXME
 fn cut_paths(paths: &Vec<Path>) -> Vec<Path> {
     if paths.is_empty() { return vec![] }
 
     let mut working_paths = Vec::<Path>::new();
 
-    for (path_index, path) in paths.iter().enumerate() {
-        if path_index == 0 || !path.source.can_cut() {
+    for path in paths.iter() {
+        if working_paths.is_empty() || !path.source.can_cut() {
             working_paths.push(path.clone());
             continue;
         }
