@@ -160,19 +160,6 @@ impl SvgCom {
     }
 
 
-    pub fn to_svgcom_str(&self) -> String {
-        struct A<'a>(&'a SvgCom);
-
-        impl<'a> std::fmt::Display for A<'a> {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                self.0.format_svgcom(f)
-            }
-        }
-
-        format!("{}", A(self))
-    }
-
-
     fn read_from_svg_path(&mut self, svg_node: &SvgPathNode) {
         let mut commands = svg_node.get_commands_iter();
         let mut points = svg_node.get_points_iter();
@@ -247,5 +234,12 @@ impl SvgCom {
         writeln!(f, "")?;
         
         Ok(())
+    }
+}
+
+
+impl std::fmt::Display for SvgCom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.format_svgcom(f)
     }
 }

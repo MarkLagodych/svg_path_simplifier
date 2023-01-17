@@ -1,5 +1,3 @@
-use kurbo::{ParamCurve, Shape};
-
 use crate::{
     Error,
     GenerateArgs,
@@ -11,10 +9,12 @@ use crate::{
 use std::{
     rc::Rc,
     cell::Ref,
+
+    collections::HashMap,
+    
     fs::File,
     path::PathBuf,
-    collections::HashMap,
-    io::prelude::*, borrow::{Borrow, BorrowMut}, 
+    io::prelude::*,
 };
 
 
@@ -51,7 +51,14 @@ pub struct Path {
 
 
 /// Segment index -> segment's intersections with another path
-type PathIntersections = HashMap<usize, Vec<kurbo::LineIntersection>>;
+pub type PathIntersections = HashMap<usize, Vec<kurbo::LineIntersection>>;
+
+
+/// Supports checking whether a point is inside
+pub struct CoveringShape {
+    pub source: SvgPathNode,
+    pub bezpath: kurbo::BezPath
+}
 
 
 fn read_file(path: &PathBuf) -> Result<String, Error> {
@@ -76,7 +83,7 @@ pub fn generate_from_svg(args: GenerateArgs) -> Result<(), Error> {
     let mut output = open_writable_file(&args.output)?;
 
     let svg = parse_svg(&input)?;
-    let svg_path_nodes = get_svg_paths(&svg, &args);
+    let svg_path_nodes = get_svg_path_nodes(&svg, &args);
 
     let mut svgcom = SvgCom::new(svg.size.width(), svg.size.height());
 
@@ -90,13 +97,13 @@ pub fn generate_from_svg(args: GenerateArgs) -> Result<(), Error> {
             .map(|node| Path::from(&node))
             .collect::<Vec<Path>>();
 
-        let paths = cut_paths(&paths);
+        let paths = autocut_paths(&paths, args.precision);
 
         svgcom.read_from_paths(&paths);
 
     }
 
-    write!(output, "{}", svgcom.to_svgcom_str());
+    write!(output, "{}", svgcom.to_string());
 
     Ok(())
 }
@@ -124,7 +131,7 @@ fn parse_svg(input: &str) -> Result<usvg::Tree, Error> {
 }
 
 
-fn get_svg_paths(svg: &usvg::Tree, args: &GenerateArgs) -> Vec<SvgPathNode> {
+fn get_svg_path_nodes(svg: &usvg::Tree, args: &GenerateArgs) -> Vec<SvgPathNode> {
     svg.root.descendants()
         .filter(|node| 
             match *node.borrow() {
@@ -134,7 +141,7 @@ fn get_svg_paths(svg: &usvg::Tree, args: &GenerateArgs) -> Vec<SvgPathNode> {
         .map(|node| SvgPathNode::new(&node))
         .filter(|path_result| path_result.is_some())
         .map(|result| result.unwrap())
-        .filter(|path| !args.onlystroked || path.get_path().stroke.is_some())
+        .filter(|path| !args.onlystroked || path.get_svg_path().stroke.is_some())
         .collect::<Vec<SvgPathNode>>()
 }
 
@@ -181,7 +188,7 @@ impl SvgPathNode {
     }
 
 
-    pub fn get_path(&self) -> Ref<'_, usvg::Path> {
+    pub fn get_svg_path(&self) -> Ref<'_, usvg::Path> {
         let node_ref = self.node.borrow();
         return Ref::map(node_ref, |node_ref| {
             if let usvg::NodeKind::Path(ref path) = node_ref {
@@ -195,22 +202,22 @@ impl SvgPathNode {
     }
 
 
-    pub fn is_closed(&self) -> bool {
-        let path = self.get_path();
+    fn is_closed(&self) -> bool {
+        let path = self.get_svg_path();
 
         return path.data.commands().len() > 0
             && *path.data.commands().last().unwrap() == usvg::PathCommand::ClosePath
     }
 
 
-    pub fn can_cut(&self) -> bool {
-        self.is_closed() && self.get_path().fill.is_some()
+    pub fn can_cover(&self) -> bool {
+        self.is_closed() && self.get_svg_path().fill.is_some()
     }
 
 
     /// Test for checking whether a given point lies inside a shape
     pub fn test_winding(&self, winding: i32) -> bool {
-        let path = self.get_path();
+        let path = self.get_svg_path();
 
         if let Some(fill) = &path.fill {
             match fill.rule {
@@ -279,6 +286,20 @@ impl Path {
         bezpath.segments()
             .collect::<Vec<kurbo::PathSeg>>()
     }
+
+
+    pub fn is_covered_by(&self, shape: &CoveringShape) -> bool {
+        use kurbo::ParamCurve;
+
+        if self.source == shape.source {
+            return false;
+        }
+
+        // XXX Is this OK?
+        let some_point = self.segments[0].eval(0.5);
+
+        shape.covers_point(some_point)
+    }
 }
 
 
@@ -286,7 +307,7 @@ impl Path {
 impl SvgPathPoints {
     pub fn from(svg_node: &SvgPathNode) -> Self {
         
-        let path = svg_node.get_path();
+        let path = svg_node.get_svg_path();
         let path_data = Rc::clone(&path.data);
         let transform = path.transform.clone();
 
@@ -302,13 +323,34 @@ impl SvgPathPoints {
 impl SvgPathCommands {
     pub fn from(svg_node: &SvgPathNode) -> Self {
         
-        let path = svg_node.get_path();
+        let path = svg_node.get_svg_path();
         let path_data = Rc::clone(&path.data);
 
         Self {
             path_data,
             command_index: 0,
         }
+    }
+}
+
+
+impl CoveringShape {
+    pub fn new(path: &Path) -> Option<Self> {
+        if !path.source.can_cover() || path.segments.len() == 0 {
+            return None;
+        }
+
+        Some(Self {
+            source: path.source.clone(),
+            bezpath: kurbo::BezPath::from_path_segments(path.segments.clone().into_iter())
+        })
+    }
+
+
+    pub fn covers_point(&self, point: kurbo::Point) -> bool {
+        use kurbo::Shape;
+
+        self.source.test_winding(self.bezpath.winding(point))
     }
 }
 
@@ -416,6 +458,8 @@ fn cut_segment(
     intersections: &Vec<kurbo::LineIntersection>
 ) -> Vec::<kurbo::PathSeg> {
 
+    use kurbo::ParamCurve;
+
     let mut last_t = 0f64;
 
     let mut subsegments = Vec::<kurbo::PathSeg>::new();
@@ -437,10 +481,9 @@ fn cut_segment(
 fn get_path_intersections(
     intersected: &Path,
     intersecting: &Path,
-    precision: f64
-) -> PathIntersections {
-
-    let mut path_intersections = PathIntersections::new();
+    intersections: &mut PathIntersections,
+    precision: f64,
+) {
 
     for (segment_index, intersected_segment) in intersected.segments.iter().enumerate() {
         for intersecting_segment in intersecting.segments.iter() {
@@ -454,16 +497,14 @@ fn get_path_intersections(
                 continue;
             }
 
-            if path_intersections.contains_key(&segment_index) {
-                path_intersections.get_mut(&segment_index).unwrap()
+            if intersections.contains_key(&segment_index) {
+                intersections.get_mut(&segment_index).unwrap()
                     .extend(segment_intersections);
             } else {
-                path_intersections.insert(segment_index, segment_intersections);
+                intersections.insert(segment_index, segment_intersections);
             }
         }
     }
-
-    path_intersections
 }
 
 
@@ -477,14 +518,21 @@ fn cut_path(path: &Path, intersections: &PathIntersections) -> Vec<Path> {
 
     for (index, segment) in path.segments.iter().enumerate() {
         if !intersections.contains_key(&index) {
+            // A non-intersected segment is added to the last path
             subpaths.last_mut().unwrap().segments.push(segment.clone());
         } else {
+            // A segment intersection ends the old path and starts a new one.
+            // The subsegment before the intersection goes to the old path.
+            // The subsegment after the intersection does to the new path.
+
             let mut subsegments = cut_segment(segment, &intersections[&index]).into_iter();
 
             if let Some(segment) = subsegments.next() {
                 subpaths.last_mut().unwrap().segments.push(segment.clone());
             }
 
+            // A segment may be intersected multiple times.
+            // In that case, every intersection starting with the second one begins a new path
             for segment in subsegments {
                 subpaths.push(new_path());
                 subpaths.last_mut().unwrap().segments.push(segment.clone());
@@ -497,68 +545,79 @@ fn cut_path(path: &Path, intersections: &PathIntersections) -> Vec<Path> {
 }
 
 
-fn is_path_covered(covered: &Path, covering: &Path) -> bool {
-    if covered.segments.len() == 0 || covering.segments.len() == 0 {
-        return false;
-    }
 
-    if covered.source == covering.source {
-        return false;
-    }
+fn autocut_paths(paths: &Vec<Path>, precision: f64) -> Vec<Path> {
+    let intersections = intersect_paths(paths, precision);
 
-    let some_point = covered.segments[0].eval(0.5);
+    let cut_paths = cut_paths(paths, intersections);
 
-    is_point_covered(some_point, covering)
+    let covering_shapes = create_covering_shapes(paths);
+
+    remove_covered_paths(cut_paths, &covering_shapes)
 }
 
 
-fn is_point_covered(point: kurbo::Point, covering: &Path) -> bool {
 
-    /// TODO do not recalculate this every time
-    let bezpath = kurbo::BezPath::from_path_segments(covering.segments.clone().into_iter());
+/// result[i] contains intersections of paths[i]
+fn intersect_paths(paths: &Vec<Path>, precision: f64) -> Vec::<PathIntersections> {
+    let mut intersections = Vec::<PathIntersections>::with_capacity(paths.len());
 
-    covering.source.test_winding(bezpath.winding(point))
+    for intersected_path in &paths[0..paths.len()-1] {
+        intersections.push(PathIntersections::new());
+
+        for intersecting_path in &paths[1..] {
+            get_path_intersections(intersected_path, intersecting_path, intersections.last_mut().unwrap(), precision);
+        }
+    }
+
+    intersections
 }
 
 
-// TODO replace naive implementation with a real one
-// TODO first intersect all paths, then cut
-// TODO calculate bezpaths once
-// FIXME
-fn cut_paths(paths: &Vec<Path>) -> Vec<Path> {
-    if paths.is_empty() { return vec![] }
+fn cut_paths(paths: &Vec<Path>, intersections: Vec<PathIntersections>) -> Vec<Path> {
+    let mut cut_paths = Vec::<Path>::new();
 
-    let mut working_paths = Vec::<Path>::new();
-
-    for path in paths.iter() {
-        if working_paths.is_empty() || !path.source.can_cut() {
-            working_paths.push(path.clone());
+    for (index, path) in paths.iter().enumerate() {
+        if intersections[index].is_empty() {
+            cut_paths.push(path.clone());
             continue;
         }
 
-        let mut new_working_paths = Vec::<Path>::new();
-
-        for working_path in working_paths.iter() {
-            let intersections = get_path_intersections(&working_path, path, 0.25);
-
-            if intersections.is_empty() {
-                new_working_paths.push(working_path.clone());
-            } else {
-                let working_path_parts = cut_path(&working_path, &intersections)
-                    .into_iter()
-                    .filter(|part| !is_path_covered(part, path))
-                    .collect::<Vec<Path>>();
-
-                new_working_paths.extend(working_path_parts);
-
-            }
-        }
-
-        new_working_paths.push(path.clone());
-
-        working_paths = new_working_paths;
+        cut_paths.extend(cut_path(path, &intersections[index]));
     }
 
-    working_paths
+    cut_paths
+}
 
+
+fn create_covering_shapes(paths: &Vec<Path>) -> Vec<Option<CoveringShape>> {
+    let mut covering_shapes = Vec::<Option<CoveringShape>>::with_capacity(paths.len());
+
+    for (index, path) in paths.iter().enumerate() {
+        covering_shapes[index] = CoveringShape::new(path);
+    }
+
+    covering_shapes
+}
+
+
+fn remove_covered_paths(paths: Vec<Path>, covering_shapes: &Vec<Option<CoveringShape>>) -> Vec<Path> {
+    paths.into_iter()
+        .enumerate()
+        .filter(|(index, path)| {
+            for shape in &covering_shapes[index+1..] {
+    
+                if shape.is_none() {
+                    continue;
+                }
+
+                if path.is_covered_by(shape.as_ref().unwrap()) {
+                    return true;
+                }
+            }
+
+            false
+        })
+        .map(|(index, shape)| shape)
+        .collect::<Vec::<Path>>()
 }
