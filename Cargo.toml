@@ -5,6 +5,9 @@ edition = "2021"
 
 authors = ["Mark Lagodych <lgd.mrk@gmail.com>"]
 description = """Utility that helps plotters understand SVG in the same way that people do"""
+repository = "https://github.com/MarkLagodych/svg_path_simplifier"
+license = "MIT"
+keywords = ["svg", "plotter"]
 
 [[bin]]
 name = "svgps"
