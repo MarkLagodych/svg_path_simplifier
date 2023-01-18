@@ -8,7 +8,7 @@ description = """SVG simplifier, converter and autocutter for plotters"""
 repository = "https://github.com/MarkLagodych/svg_path_simplifier"
 license = "MIT"
 keywords = ["svg", "plotter"]
-exclude = ["/target", "/demo"]
+exclude = ["/demo"]
 
 [[bin]]
 name = "svgps"
