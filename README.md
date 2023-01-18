@@ -10,12 +10,13 @@ and [kurbo](https://github.com/linebender/kurbo) for geometric calculations.
 
 ## Demos
 
-| Original SVG | Generated (untouched) | Generated (autocut) |
+| `XXXXXXXXXXXXXXXXX` | `XXXXXXXXXXXXXXXXX` | `XXXXXXXXXXXXXXXXX` |
 | --- | --- | --- |
+| Original SVG | Generated (untouched) | Generated (autocut) |
 | ![ferris](./demo/ferris.svg) | ![ferris-gen](./demo/ferris-converted.svg) | ![ferris-cut](demo/ferris-converted-autocut.svg) |
 | ![tiger](./demo/tiger.svg) | ![tiger-gen](./demo/tiger-converted.svg) | ![tiger-cut](demo/tiger-converted-autocut.svg) |
 
-See [gen.sh](./demo/gen.sh).
+See [demo/gen.sh](./demo/gen.sh).
 
 ## Features
 
