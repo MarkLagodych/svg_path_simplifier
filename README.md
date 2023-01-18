@@ -13,8 +13,8 @@ and [kurbo](https://github.com/linebender/kurbo) for geometric calculations.
 | `XXXXXXXXXXXXXXXXX` | `XXXXXXXXXXXXXXXXX` | `XXXXXXXXXXXXXXXXX` |
 | --- | --- | --- |
 | Original SVG | Generated (untouched) | Generated (autocut) |
-| ![ferris](./demo/ferris.svg) | ![ferris-gen](./demo/ferris-converted.svg) | ![ferris-cut](demo/ferris-converted-autocut.svg) |
-| ![tiger](./demo/tiger.svg) | ![tiger-gen](./demo/tiger-converted.svg) | ![tiger-cut](demo/tiger-converted-autocut.svg) |
+| ![ferris](https://github.com/MarkLagodych/svg_path_simplifier/blob/main/demo/ferris.svg) | ![ferris-gen](https://github.com/MarkLagodych/svg_path_simplifier/blob/main/demo/ferris-converted.svg) | ![ferris-cut](https://github.com/MarkLagodych/svg_path_simplifier/blob/main/demo/ferris-converted-autocut.svg) |
+| ![tiger](https://github.com/MarkLagodych/svg_path_simplifier/blob/main/demo/tiger.svg) | ![tiger-gen](https://github.com/MarkLagodych/svg_path_simplifier/blob/main/demo/tiger-converted.svg) | ![tiger-cut](https://github.com/MarkLagodych/svg_path_simplifier/blob/main/demo/tiger-converted-autocut.svg) |
 
 See [demo/gen.sh](./demo/gen.sh).
 

@@ -8,6 +8,7 @@ description = """Utility that helps plotters understand SVG in the same way that
 repository = "https://github.com/MarkLagodych/svg_path_simplifier"
 license = "MIT"
 keywords = ["svg", "plotter"]
+exclude = ["/demo"]
 
 [[bin]]
 name = "svgps"
