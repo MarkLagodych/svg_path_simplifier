@@ -26,7 +26,15 @@ See [demo/gen.sh](./demo/gen.sh).
 * Autocutting path segments that are not visible because of being covered by other figures
   (think of this as of a depth test)
 
-### Usage
+## Installation
+
+This requires [Cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html), the Rust package manager.
+
+```sh
+cargo install svg_path_simplifier
+```
+
+## Usage
 
 ```sh
 svgps help generate # Try this first to see all the options
@@ -40,7 +48,7 @@ The `-a` (`--autocut`) flag makes the program cut the covered segments of the pa
 
 Only closed filled paths can cover other paths.
 
-### SvgCom format
+## SvgCom format
 
 SvgCom is a text format for vector graphics outline representation that borrows a lot from the
 [`<path:d>`](https://www.w3.org/TR/SVG/paths.html#TheDProperty) format of SVG. 
