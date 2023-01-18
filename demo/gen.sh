@@ -13,5 +13,3 @@ svgps render ./tiger.svgcom ./tiger-converted.svg $RENDER_OPTS
 
 svgps generate ./tiger.svg ./tiger.svgcom --autocut
 svgps render ./tiger.svgcom ./tiger-converted-autocut.svg $RENDER_OPTS
-
-rm ./ferris.svgcom
