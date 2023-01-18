@@ -52,12 +52,12 @@ pub struct GenerateArgs {
     #[arg(short = 'a', long)]
     autocut: bool,
 
-    /// Remove the paths that are too short (shorter than PRECISION) after autocut
-    #[arg(short = 'p', long)]
-    polish: bool,
+    // /// Remove the paths that are too short (shorter than PRECISION) after autocut
+    // #[arg(short = 'p', long)]
+    // polish: bool,
 
-    /// Precision of autocut/polish commands (in pixels)
-    #[arg(short = 'e', long, default_value_t = 0.1)]
+    /// Precision of autocut command (in pixels)
+    #[arg(short = 'e', long, default_value_t = 0.25)]
     precision: f64,
 
     // /// Do not convert ClosePath ("Z") commands
