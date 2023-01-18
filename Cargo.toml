@@ -1,10 +1,10 @@
 [package]
 name = "svg_path_simplifier"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 
 authors = ["Mark Lagodych <lgd.mrk@gmail.com>"]
-description = """Utility that helps plotters understand SVG in the same way that people do"""
+description = """SVG simplifier, converter and autocutter for plotters"""
 repository = "https://github.com/MarkLagodych/svg_path_simplifier"
 license = "MIT"
 keywords = ["svg", "plotter"]

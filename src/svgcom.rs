@@ -35,13 +35,6 @@ impl SvgCom {
     }
 
 
-    pub fn read_from_svg_paths(&mut self, svg_paths: &Vec<SvgPathNode>) {
-        for path in svg_paths {
-            self.read_from_svg_path(path);
-        }
-    }
-
-
     pub fn read_from_paths(&mut self, paths: &Vec<Path>) {
         for path in paths {
             self.read_from_path(path);
@@ -125,7 +118,6 @@ impl SvgCom {
                 'M' => self.commands.move_to(get_point()),
                 'L' => self.commands.line_to(get_point()),
                 'C' => self.commands.curve_to(get_point(), get_point(), get_point()),
-                'Z' => self.commands.close_path(),
                 c => return Err(format!("Invalid command: {}", c)),
             }
         }
@@ -141,8 +133,7 @@ impl SvgCom {
                 kurbo::PathEl::MoveTo(_) => 1,
                 kurbo::PathEl::LineTo(_) => 1,
                 kurbo::PathEl::CurveTo(_, _, _) => 3,
-                kurbo::PathEl::ClosePath => 0,
-                kurbo::PathEl::QuadTo(_, _) => panic!("unexpected quadradic curve"),
+                _ => panic!("unexpected command"),
             };
         }
 
@@ -157,25 +148,7 @@ impl SvgCom {
 
     pub fn to_svg_path_data_str(&self) -> String {
         self.commands.to_svg()
-    }
-
-
-    fn read_from_svg_path(&mut self, svg_node: &SvgPathNode) {
-        let mut commands = svg_node.get_commands_iter();
-        let mut points = svg_node.get_points_iter();
-        let mut p = || points.next().unwrap();
-
-        for command in commands {
-            match command {
-                usvg::PathCommand::MoveTo => self.commands.move_to(p()),
-                usvg::PathCommand::LineTo => self.commands.line_to(p()),
-                usvg::PathCommand::CurveTo => self.commands.curve_to(p(), p(), p()),
-                usvg::PathCommand::ClosePath => self.commands.close_path(),
-            }
-        }
-    }
-
-    
+    }    
 
 
     pub(self) fn format_svgcom(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -202,7 +175,6 @@ impl SvgCom {
                 kurbo::PathEl::MoveTo(_) => write!(f, "M")?,
                 kurbo::PathEl::LineTo(_) => write!(f, "L")?,
                 kurbo::PathEl::CurveTo(_, _, _) => write!(f, "C")?,
-                kurbo::PathEl::ClosePath => write!(f, "Z")?,
                 _ => {}
             }
         }

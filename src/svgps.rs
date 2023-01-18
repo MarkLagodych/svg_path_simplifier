@@ -85,23 +85,17 @@ pub fn generate_from_svg(args: GenerateArgs) -> Result<(), Error> {
     let svg = parse_svg(&input)?;
     let svg_path_nodes = get_svg_path_nodes(&svg, &args);
 
+    let mut paths = svg_path_nodes.iter()
+        .map(|node| Path::from(&node))
+        .collect::<Vec<Path>>();
+
+    if args.autocut {
+        paths = autocut_paths(&paths, args.precision);
+    }
+
     let mut svgcom = SvgCom::new(svg.size.width(), svg.size.height());
 
-    if !args.autocut {
-
-        svgcom.read_from_svg_paths(&svg_path_nodes);
-        
-    } else {
-
-        let paths = svg_path_nodes.iter()
-            .map(|node| Path::from(&node))
-            .collect::<Vec<Path>>();
-
-        let paths = autocut_paths(&paths, args.precision);
-
-        svgcom.read_from_paths(&paths);
-
-    }
+    svgcom.read_from_paths(&paths);
 
     write!(output, "{}", svgcom.to_string());
 
@@ -175,7 +169,11 @@ fn write_svg_end(output: &mut File) {
 impl SvgPathNode {
     /// Returns [None] if the node is not a [usvg::Path]
     pub fn new(node: &usvg::Node) -> Option<Self> {
-        if let usvg::NodeKind::Path(_) = *node.borrow() {
+        if let usvg::NodeKind::Path(ref path) = *node.borrow() {
+            if path.visibility == usvg::Visibility::Hidden {
+                return None
+            }
+
             let mut me = Self {
                 node: node.clone(),
             };
