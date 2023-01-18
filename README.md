@@ -3,18 +3,27 @@
 The `svgps` program converts `.svg` images into MoveTo/LineTo/CubicBezierTo/ClosePath commands
 contained in a [`.svgcom`](#svgcom-format) file.
 
-The initial goal was to help plotters understand SVG in the same way that people do.
+The initial goal was to prettify and simplify SVG before sending to plotters.
 
-It utilizes the [usvg](https://github.com/RazrFalcon/resvg/tree/master/usvg) crate for SVG parsing and simplification.
+It utilizes [usvg](https://github.com/RazrFalcon/resvg/tree/master/usvg) for SVG parsing and simplification
+and [kurbo](https://github.com/linebender/kurbo) for geometric calculations.
+
+## Demos
+
+| Original SVG | Generated (untouched) | Generated (autocut) |
+| --- | --- | --- |
+| ![ferris](./demo/ferris.svg) | ![ferris-gen](./demo/ferris-converted.svg) | ![ferris-cut](demo/ferris-converted-autocut.svg) |
+| ![tiger](./demo/tiger.svg) | ![tiger-gen](./demo/tiger-converted.svg) | ![tiger-cut](demo/tiger-converted-autocut.svg) |
+
+See [gen.sh](./demo/gen.sh).
 
 ## Features
 
-* Converting `.svg` to `.svgcom`
-* Converting `.svgcom` to `.svg` for previewing
+* Generating `.svgcom` from `.svg`
+* Rendering `.svgcom` to `.svg` for previewing
 * Selecting only stroked paths for the conversion
 * Autocutting path segments that are not visible because of being covered by other figures
   (think of this as of a depth test)
-* Polishing the result (removing the paths that are too short)
 
 ### Usage
 
@@ -57,29 +66,18 @@ Additional ("garbage") lines in the end of the file are optional and are never r
 
 The coordinate list specifies 2D point coordinates, thus the number of coordinates must be even.
 
-<!-- The `Z` (ClosePath) command in SvgCom, unlike in SVG, does not draw a line.
-It only preserves the fact that a path segment is closed.
-Thus, when converting from SVG, `Z` is converted to
-`L` (if the current point is further from the initial point than the given precision)
-and `Z`.
-
-`Z` is extremely useful when converting between SVG and SvgCom multiple times.
-Specifically, the fact of a path being closed can be used when cutting invisible (covered) path segments. -->
-
 ### Example 0
 
 `example.svgcom`
 ```
 720 480 2 4
 MLZ
-0 0 100 100 0 0
+0 0 100 100
 ```
 
 This file defines an image of size `720`x`480`
 with `2` commands (`M`ove and `L`ine and ClosePath)
-and `4` coordinates (`0.0`, `0.0`, `100.0`, `100.0`, `0.0` and `0.0`), which form three points.
-
-`Z` commands always
+and `4` coordinates (`0.0`, `0.0`, `100.0`, `100.0`), which form two points.
 
 ### Example 1
 
@@ -94,7 +92,7 @@ and `4` coordinates (`0.0`, `0.0`, `100.0`, `100.0`, `0.0` and `0.0`), which for
 ```
 800 600 5 10
 MLLLZ
-0 0 100 0 100 70 0 70 0 0
+0 0 100 0 100 70 0 70
 ```
 
 ### Example 2
@@ -106,9 +104,10 @@ MLLLZ
     <!-- Hidden elements are removed -->
     <path stroke="#000000" visibility="hidden" fill="none" d="M 0 0 L 100 0 L 100 70 L 0 70 Z"/>
 
-    <!-- Groups get flattened -->
+    <!-- Groups are flattened -->
     <g>
-        <g>
+        <!-- Transforms are resolved -->
+        <g transform="translate(0 0)">
             <!-- All shapes are converted to paths -->
             <ellipse cx="100" cy="100" rx="50" ry="60"/>
         </g>
