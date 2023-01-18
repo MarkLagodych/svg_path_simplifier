@@ -221,7 +221,7 @@ impl SvgPathNode {
 
         if let Some(fill) = &path.fill {
             match fill.rule {
-                usvg::FillRule::EvenOdd => return winding % 2 == 0,
+                usvg::FillRule::EvenOdd => return winding % 2 != 0,
                 usvg::FillRule::NonZero => return winding != 0,
             }
         }
@@ -343,7 +343,6 @@ impl CoveringShape {
         }
 
         let mut bezpath = kurbo::BezPath::from_path_segments(path.segments.clone().into_iter());
-        bezpath.close_path();
 
         Some(Self {
             source: path.source.clone(),
@@ -355,7 +354,8 @@ impl CoveringShape {
     pub fn covers_point(&self, point: kurbo::Point) -> bool {
         use kurbo::Shape;
 
-        self.source.test_winding(self.bezpath.winding(point))
+        let winding = self.bezpath.winding(point);
+        self.source.test_winding(winding)
     }
 }
 
@@ -598,7 +598,6 @@ fn autocut_paths(paths: &Vec<Path>, precision: f64) -> Vec<Path> {
     let covering_shapes = create_covering_shapes(paths);
 
     remove_covered_paths(cut_paths, &covering_shapes)
-    // cut_paths
 }
 
 
@@ -654,6 +653,7 @@ fn create_covering_shapes(paths: &Vec<Path>) -> Vec<Option<CoveringShape>> {
 }
 
 
+/// Requires path's sources to be in the same order as coveringshapes's sources
 fn remove_covered_paths(paths: Vec<Path>, covering_shapes: &Vec<Option<CoveringShape>>) -> Vec<Path> {
     if paths.len() == 0 { return vec![] }
 
@@ -664,8 +664,12 @@ fn remove_covered_paths(paths: Vec<Path>, covering_shapes: &Vec<Option<CoveringS
         .enumerate()
         .filter(|(index, path)| {
 
+            if last_svg_node != path.source {
+                last_svg_node = path.source.clone();
+                z_index += 1;
+            }
+
             for shape in &covering_shapes[z_index+1..] {
-    
                 if shape.is_none() {
                     continue;
                 }
@@ -673,11 +677,6 @@ fn remove_covered_paths(paths: Vec<Path>, covering_shapes: &Vec<Option<CoveringS
                 if path.is_covered_by(shape.as_ref().unwrap()) {
                     return false;
                 }
-            }
-
-            if last_svg_node != path.source {
-                last_svg_node = path.source.clone();
-                z_index += 1;
             }
 
             true
