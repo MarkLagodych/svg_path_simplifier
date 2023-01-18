@@ -299,12 +299,8 @@ impl Path {
             return false;
         }
 
-        // XXX Is this OK?
-        let p1 = self.segments[0].eval(0.5);
-        let p2 = self.segments[self.segments.len() / 2].eval(0.5);
-        let p3 = self.segments.last().unwrap().eval(0.5);
-
-        shape.covers_point(p1) || shape.covers_point(p2) || shape.covers_point(p3)
+        // XXX Is this Ok?
+        shape.covers_point(self.segments[self.segments.len()/2].eval(0.5))
     }
 }
 
@@ -346,9 +342,12 @@ impl CoveringShape {
             return None;
         }
 
+        let mut bezpath = kurbo::BezPath::from_path_segments(path.segments.clone().into_iter());
+        bezpath.close_path();
+
         Some(Self {
             source: path.source.clone(),
-            bezpath: kurbo::BezPath::from_path_segments(path.segments.clone().into_iter())
+            bezpath
         })
     }
 
@@ -401,11 +400,6 @@ fn get_segment_intersection(
     intersecting: &kurbo::PathSeg,
     precision: f64
 ) -> Vec<kurbo::LineIntersection> {
-    use kurbo::Shape;
-
-    if !bbox_intersect(intersected.bounding_box(), intersecting.bounding_box()) {
-        return vec![]
-    }
 
     match intersecting {
         kurbo::PathSeg::Line(line) =>
@@ -431,11 +425,40 @@ fn get_line_intersection(
 }
 
 
+fn get_reverse_line_intersection(
+    intersected: &kurbo::Line,
+    intersecting: &kurbo::CubicBez,
+    precision: f64
+) -> Vec::<kurbo::LineIntersection> {
+    use kurbo::Shape;
+
+    return kurbo::PathSeg::Cubic(intersecting.clone())
+        .intersect_line(intersected.clone())
+        .iter()
+        .map(|intersection| kurbo::LineIntersection {
+            line_t: intersection.segment_t,
+            segment_t: intersection.line_t
+        })
+        .collect::<Vec<kurbo::LineIntersection>>()
+}
+
+
 fn get_curve_intersection(
     intersected: &kurbo::PathSeg,
     intersecting: &kurbo::CubicBez,
     precision: f64
 ) -> Vec::<kurbo::LineIntersection> {
+    use kurbo::Shape;
+
+    if let kurbo::PathSeg::Line(line) = intersected {
+        return get_reverse_line_intersection(line, intersecting, precision);
+    }
+
+    // XXX Is this efficient?
+    if !bbox_intersect(intersected.bounding_box(), intersecting.bounding_box()) {
+        return vec![]
+    }
+
     let points = curve_to_points(&intersecting, precision);
     let line_starts = points[..points.len()-1].iter();
     let line_ends = points[1..].iter();
@@ -473,6 +496,7 @@ fn curve_to_points(curve: &kurbo::CubicBez, precision: f64) -> Vec<kurbo::Point>
 }
 
 
+/// Requires intersections to be sorted by segment_t
 fn cut_segment(
     segment: &kurbo::PathSeg,
     intersections: &Vec<kurbo::LineIntersection>
@@ -538,7 +562,7 @@ fn cut_path(path: &Path, intersections: &PathIntersections) -> Vec<Path> {
 
     for (index, segment) in path.segments.iter().enumerate() {
         if !intersections.contains_key(&index) {
-            // A non-intersected segment is added to the last path
+            // A non-intersected segment is added to the last path as is
             subpaths.last_mut().unwrap().segments.push(segment.clone());
         } else {
             // A segment intersection ends the old path and starts a new one.
@@ -574,23 +598,32 @@ fn autocut_paths(paths: &Vec<Path>, precision: f64) -> Vec<Path> {
     let covering_shapes = create_covering_shapes(paths);
 
     remove_covered_paths(cut_paths, &covering_shapes)
+    // cut_paths
 }
 
 
 
 /// result[i] contains intersections of paths[i]
 fn intersect_paths(paths: &Vec<Path>, precision: f64) -> Vec::<PathIntersections> {
-    let mut intersections = Vec::<PathIntersections>::with_capacity(paths.len());
+    let mut path_intersections = Vec::<PathIntersections>::with_capacity(paths.len());
 
     for (index, intersected_path) in paths.iter().enumerate() {
-        intersections.push(PathIntersections::new());
+        path_intersections.push(PathIntersections::new());
 
-        for intersecting_path in &paths[index..] {
-            get_path_intersections(intersected_path, intersecting_path, intersections.last_mut().unwrap(), precision);
+        for intersecting_path in &paths[index+1..] {
+            get_path_intersections(intersected_path, intersecting_path, path_intersections.last_mut().unwrap(), precision);
         }
     }
 
-    intersections
+    for intersections in path_intersections.iter_mut() {
+        for (segment_index, segment_intersections) in intersections.iter_mut() {
+            segment_intersections.sort_by(|a, b|
+                a.segment_t.partial_cmp(&b.segment_t).unwrap()
+            );
+        } 
+    }
+
+    path_intersections
 }
 
 
